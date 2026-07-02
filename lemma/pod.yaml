@@ -1,0 +1,287 @@
+# Lemma Pod Configuration — OrbitOS
+# This file defines the OrbitOS workspace structure on the Lemma platform.
+# Run: lemma pod apply --config lemma/pod.yaml
+
+pod:
+  name: orbitos-startup-pod
+  description: "OrbitOS — Autonomous AI Startup Operating System"
+  version: "1.0.0"
+
+# ── Tables (Persistent Agent Memory) ────────────────────────────────────────
+tables:
+  - name: goals
+    description: "Founder goals and CEO execution plans"
+    columns:
+      - name: id
+        type: text
+        primary: true
+      - name: goal_text
+        type: text
+        required: true
+      - name: status
+        type: select
+        options: [pending, planning, active, completed, cancelled]
+        default: pending
+      - name: created_at
+        type: datetime
+      - name: deadline
+        type: datetime
+      - name: ceo_plan
+        type: text  # JSON blob
+      - name: progress_pct
+        type: number
+        default: 0
+      - name: assigned_agents
+        type: text  # JSON array
+
+  - name: tasks
+    description: "Sprint tasks synced with Jira"
+    columns:
+      - name: id
+        type: text
+        primary: true
+      - name: project_id
+        type: text
+      - name: title
+        type: text
+      - name: assignee
+        type: text
+      - name: priority
+        type: select
+        options: [critical, high, medium, low]
+      - name: status
+        type: select
+        options: [todo, in_progress, review, done]
+      - name: story_points
+        type: number
+      - name: sprint
+        type: text
+      - name: jira_ticket_id
+        type: text
+
+  - name: agent_actions
+    description: "Full audit trail of all agent actions"
+    columns:
+      - name: id
+        type: text
+        primary: true
+      - name: agent_name
+        type: text
+      - name: action_type
+        type: text
+      - name: description
+        type: text
+      - name: status
+        type: select
+        options: [running, success, failed, pending_approval]
+      - name: duration_ms
+        type: number
+      - name: created_at
+        type: datetime
+
+  - name: github_activity
+    columns:
+      - name: id
+        type: text
+        primary: true
+      - name: repo
+        type: text
+      - name: type
+        type: select
+        options: [commit, pr, issue, review, deployment]
+      - name: title
+        type: text
+      - name: author
+        type: text
+      - name: is_blocker
+        type: boolean
+      - name: created_at
+        type: datetime
+
+# ── Agents ──────────────────────────────────────────────────────────────────
+agents:
+  - name: ceo-agent
+    display_name: "CEO Agent"
+    description: "Goal decomposition and agent orchestration"
+    model: gemini-1.5-pro
+    temperature: 0.7
+
+  - name: pm-agent
+    display_name: "PM Agent"
+    description: "Sprint planning and project management"
+    model: gemini-1.5-flash
+    temperature: 0.5
+
+  - name: developer-agent
+    display_name: "Developer Agent"
+    description: "GitHub monitoring and technical analysis"
+    model: gemini-1.5-flash
+    temperature: 0.3
+
+  - name: operations-agent
+    display_name: "Operations Agent"
+    description: "Jira and Notion management"
+    model: gemini-1.5-flash
+    temperature: 0.4
+
+  - name: communications-agent
+    display_name: "Communications Agent"
+    description: "Email, Slack, and meeting management"
+    model: gemini-1.5-pro
+    temperature: 0.6
+
+  - name: hr-agent
+    display_name: "HR Agent"
+    description: "Team and hiring management"
+    model: gemini-1.5-flash
+    temperature: 0.4
+
+  - name: finance-agent
+    display_name: "Finance Agent"
+    description: "Budget and invoice management"
+    model: gemini-1.5-flash
+    temperature: 0.2
+
+  - name: analytics-agent
+    display_name: "Analytics Agent"
+    description: "Reports, KPIs, and dashboards"
+    model: gemini-1.5-pro
+    temperature: 0.5
+
+# ── Workflows ────────────────────────────────────────────────────────────────
+workflows:
+  - name: goal-execution-workflow
+    description: "Main orchestration: CEO → PM + Dev + Ops + Comms + HR + Finance + Analytics"
+    trigger:
+      type: manual
+      event: goal_submitted
+    steps:
+      - agent: ceo-agent
+        action: analyze_and_plan
+        outputs: [plan, objectives, agent_assignments]
+      - parallel:
+        - agent: pm-agent
+          action: create_sprint_plan
+          inputs: [plan, objectives]
+        - agent: developer-agent
+          action: scan_github
+          inputs: [plan]
+        - agent: operations-agent
+          action: setup_jira_notion
+          inputs: [plan, objectives]
+        - agent: communications-agent
+          action: schedule_meetings_notify
+          inputs: [plan, objectives]
+        - agent: hr-agent
+          action: check_availability
+          inputs: [plan]
+        - agent: finance-agent
+          action: estimate_budget
+          inputs: [plan]
+        - agent: analytics-agent
+          action: create_dashboard
+          inputs: [plan, objectives]
+      - agent: ceo-agent
+        action: compile_executive_report
+        inputs: [all_agent_outputs]
+
+  - name: daily-standup-workflow
+    description: "9 AM daily: GitHub check + email digest + Slack summary"
+    trigger:
+      type: schedule
+      cron: "0 9 * * 1-5"  # 9 AM weekdays
+    steps:
+      - parallel:
+        - agent: developer-agent
+          action: check_blockers
+        - agent: communications-agent
+          action: triage_emails
+      - agent: analytics-agent
+        action: generate_daily_digest
+      - agent: communications-agent
+        action: send_slack_digest
+
+  - name: weekly-report-workflow
+    description: "Every Friday 5 PM: compile metrics + investor update"
+    trigger:
+      type: schedule
+      cron: "0 17 * * 5"  # 5 PM Friday
+    steps:
+      - agent: analytics-agent
+        action: compile_weekly_report
+      - agent: finance-agent
+        action: budget_summary
+      - agent: ceo-agent
+        action: draft_investor_update
+
+  - name: email-triage-workflow
+    description: "Process incoming Gmail: classify + draft reply + escalate"
+    trigger:
+      type: connector
+      connector: gmail
+      event: new_message
+    steps:
+      - agent: communications-agent
+        action: classify_email
+      - agent: communications-agent
+        action: draft_reply
+      - agent: ceo-agent
+        action: review_urgent_emails
+        condition: "email.priority == 'urgent'"
+
+# ── Connectors ───────────────────────────────────────────────────────────────
+connectors:
+  - name: github
+    type: github
+    scopes: [repo, org]
+    
+  - name: slack
+    type: slack
+    scopes: [channels:read, chat:write, files:write]
+    
+  - name: gmail
+    type: gmail
+    scopes: [gmail.readonly, gmail.send]
+    
+  - name: google-calendar
+    type: google_calendar
+    scopes: [calendar.readonly, calendar.events]
+
+# ── Approvals ────────────────────────────────────────────────────────────────
+approvals:
+  - name: production-deployment
+    description: "Required before any production deployment"
+    required_approvers: 1
+    approver_roles: [founder, cto]
+    timeout_hours: 24
+
+  - name: large-expense
+    description: "Required for expenses > $5,000"
+    required_approvers: 1
+    approver_roles: [founder]
+    timeout_hours: 48
+
+  - name: send-external-email
+    description: "Required before sending external emails to investors"
+    required_approvers: 1
+    approver_roles: [founder]
+    timeout_hours: 4
+
+# ── Schedules ────────────────────────────────────────────────────────────────
+schedules:
+  - name: daily-standup
+    workflow: daily-standup-workflow
+    cron: "0 9 * * 1-5"
+    enabled: true
+
+  - name: weekly-report
+    workflow: weekly-report-workflow
+    cron: "0 17 * * 5"
+    enabled: true
+
+  - name: github-monitor
+    description: "Check GitHub every 30 minutes"
+    agent: developer-agent
+    action: quick_github_scan
+    cron: "*/30 * * * *"
+    enabled: true
